@@ -12,3 +12,4 @@ tokio = { version = "1.47.1", features = ["full"] }
 tokio-tungstenite = "0.27.0"
 toml = "0.9.4"
 futures-util = "0.3.31"
+sea-orm = { version = "1.1.14", features = ["macros", "sqlx-postgres", "runtime-tokio-rustls"] }
