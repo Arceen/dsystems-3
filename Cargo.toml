@@ -2,6 +2,7 @@
 name = "rust-queue"
 version = "0.1.0"
 edition = "2024"
+default-run = "rust-queue"
 
 [dependencies]
 anyhow = "1.0.98"
@@ -13,3 +14,5 @@ tokio-tungstenite = "0.27.0"
 toml = "0.9.4"
 futures-util = "0.3.31"
 sea-orm = { version = "1.1.14", features = ["macros", "sqlx-postgres", "runtime-tokio-rustls"] }
+dotenvy = "0.15.7"
+log = "0.4.27"
