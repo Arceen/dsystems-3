@@ -1,6 +1,6 @@
 use futures_util::{SinkExt, StreamExt};
-use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 
 #[tokio::main]
 async fn main() {
@@ -9,11 +9,11 @@ async fn main() {
         let _ = tokio::spawn(async move {
             let (mut write, read) = stream.split();
             let read_handler = tokio::spawn(async move {
-                read.for_each(|msg|
-                    async {
-                        let data = msg.unwrap().into_data();
-                        println!("{}", String::from_utf8(data.to_vec()).unwrap());
-                    }).await;
+                read.for_each(|msg| async {
+                    let data = msg.unwrap().into_data();
+                    println!("{}", String::from_utf8(data.to_vec()).unwrap());
+                })
+                .await;
             });
             let write_handler = tokio::spawn(async move {
                 let mut i = 0_u32;
@@ -25,6 +25,8 @@ async fn main() {
                 }
             });
             let _ = tokio::join!(read_handler, write_handler);
-        }).await.expect("could not await client thread");
+        })
+        .await
+        .expect("could not await client thread");
     }
 }

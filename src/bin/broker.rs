@@ -13,6 +13,7 @@ async fn main() {
             while let Some(msg) = ws_socket.next().await {
                 ws_socket.send(msg.unwrap()).await;
             }
-        }).await;
+        })
+        .await;
     }
 }
