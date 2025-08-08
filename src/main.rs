@@ -1,3 +1,4 @@
+use aws_sdk_s3::config::endpoint::SharedEndpointResolver;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -9,11 +10,20 @@ struct User {
     name: String,
     email: String,
 }
+impl User {
+    fn new(name: impl Into<String>, email: impl Into<String>) -> Self {
+        Self {
+            id: 0,
+            name: name.into(),
+            email: email.into(),
+        }
+    }
+}
 
 trait UserRepository {
     fn find_by_id(&self, id: u16) -> Option<User>;
     fn save(&mut self, user: User) -> Result<(), String>;
-    fn find_by_email(&self, email: String) -> Option<User>;
+    fn find_by_email(&self, email: impl Into<String>) -> Option<User>;
 }
 
 struct InMemoryUserRepository {
@@ -34,16 +44,17 @@ impl UserRepository for InMemoryUserRepository {
         self.db.get(&id).cloned()
     }
 
-    fn find_by_email(&self, email: String) -> Option<User> {
+    fn find_by_email(&self, email: impl Into<String>) -> Option<User> {
+        let email = email.into();
         self.db.values().find(|&user| user.email == email).cloned()
     }
 
     fn save(&mut self, mut user: User) -> Result<(), String> {
         if user.id == 0 {
             user.id = self.next_id;
-            self.next_id += 1;
         }
         self.db.insert(self.next_id, user);
+        self.next_id += 1;
         Ok(())
     }
 }
@@ -66,10 +77,10 @@ impl UserRepository for DatabaseUserRepository {
             name: "Anone".into(),
         })
     }
-    fn find_by_email(&self, email: String) -> Option<User> {
+    fn find_by_email(&self, email: impl Into<String>) -> Option<User> {
         Some(User {
             id: 0,
-            email,
+            email: email.into(),
             name: "Anone".into(),
         })
     }
@@ -85,18 +96,28 @@ trait EmailSender {
 
 struct EmailService;
 impl EmailService {
-    fn new() -> Self {Self}
+    fn new() -> Self {
+        Self
+    }
+}
+impl EmailSender for EmailService {
     fn send_email(&self, to: &str, msg: &str) -> Result<(), String> {
         println!("Sending mail to: {to}, \n {msg}");
         Ok(())
     }
 }
-
 struct MockEmailService {
     email_list: Rc<RefCell<Vec<(String, String)>>>,
 }
 impl MockEmailService {
-    fn new() -> Self { Self{ email_list: Rc::new(RefCell::new(Vec::new()))}}
+    fn new() -> Self {
+        Self {
+            email_list: Rc::new(RefCell::new(Vec::new())),
+        }
+    }
+}
+
+impl EmailSender for MockEmailService {
     fn send_email(&self, to: &str, msg: &str) -> Result<(), String> {
         println!("saving mail to archive!");
         self.email_list.borrow_mut().push((to.into(), msg.into()));
@@ -105,44 +126,84 @@ impl MockEmailService {
     }
 }
 
-struct UserManagementService<E: EmailSender>{}
-fn main() {
-    // let mut mem_repo = InMemoryUserRepository::new();
-    // let mut mem_repo = DatabaseUserRepository::new("postgres://network-protocol.com".into());
-    // mem_repo
-    //     .save(User {
-    //         id: 0,
-    //         name: "Jamal".into(),
-    //         email: "jamal@gmail.com".into(),
-    //     })
-    //     .unwrap();
-    // mem_repo
-    //     .save(User {
-    //         id: 0,
-    //         name: "Kano".into(),
-    //         email: "kano@gmail.com".into(),
-    //     })
-    //     .unwrap();
-    // mem_repo
-    //     .save(User {
-    //         id: 0,
-    //         name: "Al".into(),
-    //         email: "al@gmail.com".into(),
-    //     })
-    //     .unwrap();
-    // mem_repo
-    //     .save(User {
-    //         id: 0,
-    //         name: "Oppa".into(),
-    //         email: "oppa@gmail.com".into(),
-    //     })
-    //     .unwrap();
-    // println!(
-    //     "{:#?}",
-    //     mem_repo.find_by_email("al@gmail.com".into()).unwrap()
-    // );
-    // println!("{:#?}", mem_repo.find_by_id(2).unwrap());
+struct UserManagementService<E: EmailSender, R: UserRepository> {
+    email_sender: E,
+    user_repository: R,
+}
 
-    let email_service = EmailService::new();
-    let
+impl<E: EmailSender, R: UserRepository> UserManagementService<E, R> {
+    fn new(email_sender: E, user_repository: R) -> Self {
+        Self {
+            email_sender,
+            user_repository,
+        }
+    }
+    fn register_user(&mut self, name: &str, email: &str) -> Result<(), String> {
+        self.user_repository.save(User::new(name, email))?;
+        self.email_sender
+            .send_email(email, "Welcome to our school")?;
+        Ok(())
+    }
+}
+
+struct SharedUserService {
+    user_repository: Rc<RefCell<dyn UserRepository>>,
+    email_service: Rc<dyn EmailSender>,
+}
+impl SharedUserService {
+    fn new(
+        user_repository: Rc<RefCell<dyn UserRepository>>,
+        email_service: Rc<dyn EmailSender>,
+    ) -> Self {
+        Self {
+            user_repository,
+            email_service,
+        }
+    }
+
+    fn register_user(&mut self, name: &str, email: &str) -> Result<(), String> {
+        self.user_repository
+            .borrow_mut()
+            .save(User::new(name, email))?;
+        self.email_service
+            .send_email(email, "Welcome to our school")?;
+        Ok(())
+    }
+}
+
+struct DIContainer {
+    email_sender: Rc<dyn EmailSender>,
+    user_repository: Rc<RefCell<dyn UserRepository>>,
+}
+
+impl DIContainer {
+    fn new() -> Self {
+        Self {
+            email_sender: Rc::new(EmailService::new()),
+            user_repository: Rc::new(RefCell::new(InMemoryUserRepository::new())),
+        }
+    }
+
+    fn with_email_sender(mut self, sender: Rc<dyn EmailSender>) -> Self {
+        self.email_sender = sender;
+        self
+    }
+    fn with_user_repository(mut self, repo: Rc<RefCell<dyn UserRepository>>) -> Self {
+        self.user_repository = repo;
+        self
+    }
+
+    fn create_user_service(&self) -> SharedUserService {
+        SharedUserService::new(self.user_repository.clone(), self.email_sender.clone())
+    }
+}
+
+fn main() -> Result<(), String> {
+    let user_repository = Rc::new(RefCell::new(InMemoryUserRepository::new()));
+    let email_service = Rc::new(EmailService::new());
+    let mut shared_email_management =
+        SharedUserService::new(user_repository.clone(), email_service.clone());
+    shared_email_management.register_user("Niloy", "niloyman01@gmail.com")?;
+    println!("{:#?}", user_repository.borrow().find_by_id(1));
+    shared_email_management.Ok(())
 }
