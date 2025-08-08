@@ -16,3 +16,4 @@ futures-util = "0.3.31"
 sea-orm = { version = "1.1.14", features = ["macros", "sqlx-postgres", "runtime-tokio-rustls"] }
 dotenvy = "0.15.7"
 log = "0.4.27"
+num = "0.4.3"
